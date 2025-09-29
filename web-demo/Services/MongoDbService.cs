@@ -218,7 +218,7 @@ namespace MongoQEDemo.Services
             return patients;
         }
 
-        public async Task<List<Patient>> SearchPatientsAsync(
+        private async Task<BsonDocument> BuildBsonFilterAsync(
             string? firstName = null,
             string? lastName = null,
             DateTime? dobFrom = null,
@@ -228,12 +228,102 @@ namespace MongoQEDemo.Services
             string? phoneNumber = null,
             string? notesKeyword = null)
         {
-            var filterBuilder = Builders<Patient>.Filter;
-            var filters = new List<FilterDefinition<Patient>>();
+            var filters = new List<BsonDocument>();
 
             if (!string.IsNullOrWhiteSpace(zipCode))
             {
-                filters.Add(filterBuilder.Eq(p => p.ZipCode, zipCode));
+                var encryptedZipCode = await _clientEncryption.EncryptAsync(
+                    zipCode,
+                    new EncryptOptions(
+                        algorithm: EncryptionAlgorithm.Indexed,
+                        keyId: _dataKeys["zipCode"],
+                        queryType: "equality",
+                        contentionFactor: 0
+                    )
+                );
+                filters.Add(new BsonDocument("zipCode", encryptedZipCode));
+            }
+
+            if (!string.IsNullOrWhiteSpace(firstName))
+            {
+                try
+                {
+                    var encryptedFirstName = await _clientEncryption.EncryptAsync(
+                        firstName,
+                        new EncryptOptions(
+                            algorithm: EncryptionAlgorithm.TextPreview,
+                            keyId: _dataKeys["firstName"],
+                            queryType: "prefixPreview",
+                            textOptions: new TextOptions(
+                                caseSensitive: true,
+                                diacriticSensitive: true,
+                                new PrefixOptions(strMaxQueryLength: 10, strMinQueryLength: 2)
+                            ),
+                            contentionFactor: 0
+                        )
+                    );
+                    var prefixFilter = new BsonDocument("$expr", new BsonDocument("$encStrStartsWith",
+                        new BsonDocument
+                        {
+                            { "input", "$firstName" },
+                            { "prefix", encryptedFirstName }
+                        }));
+                    filters.Add(prefixFilter);
+                }
+                catch (Exception)
+                {
+                    var encryptedFirstName = await _clientEncryption.EncryptAsync(
+                        firstName,
+                        new EncryptOptions(
+                            algorithm: EncryptionAlgorithm.Indexed,
+                            keyId: _dataKeys["firstName"],
+                            queryType: "equality",
+                            contentionFactor: 0
+                        )
+                    );
+                    filters.Add(new BsonDocument("firstName", encryptedFirstName));
+                }
+            }
+
+            if (!string.IsNullOrWhiteSpace(lastName))
+            {
+                try
+                {
+                    var encryptedLastName = await _clientEncryption.EncryptAsync(
+                        lastName,
+                        new EncryptOptions(
+                            algorithm: EncryptionAlgorithm.TextPreview,
+                            keyId: _dataKeys["lastName"],
+                            queryType: "prefixPreview",
+                            textOptions: new TextOptions(
+                                caseSensitive: true,
+                                diacriticSensitive: true,
+                                new PrefixOptions(strMaxQueryLength: 10, strMinQueryLength: 2)
+                            ),
+                            contentionFactor: 0
+                        )
+                    );
+                    var prefixFilter = new BsonDocument("$expr", new BsonDocument("$encStrStartsWith",
+                        new BsonDocument
+                        {
+                            { "input", "$lastName" },
+                            { "prefix", encryptedLastName }
+                        }));
+                    filters.Add(prefixFilter);
+                }
+                catch (Exception)
+                {
+                    var encryptedLastName = await _clientEncryption.EncryptAsync(
+                        lastName,
+                        new EncryptOptions(
+                            algorithm: EncryptionAlgorithm.Indexed,
+                            keyId: _dataKeys["lastName"],
+                            queryType: "equality",
+                            contentionFactor: 0
+                        )
+                    );
+                    filters.Add(new BsonDocument("lastName", encryptedLastName));
+                }
             }
 
             if (dobFrom.HasValue && dobTo.HasValue)
@@ -265,93 +355,11 @@ namespace MongoQEDemo.Services
                     );
 
                     var encryptedRangeFilter = await _clientEncryption.EncryptExpressionAsync(rangeExpression, encryptOptions);
-                    filters.Add(new BsonDocumentFilterDefinition<Patient>(encryptedRangeFilter));
+                    filters.Add(encryptedRangeFilter);
                 }
                 catch (Exception ex)
                 {
                     _logger.LogWarning($"Failed to create encrypted date range query: {ex.Message}. Skipping date filter.");
-                }
-            }
-
-            if (!string.IsNullOrWhiteSpace(firstName))
-            {
-                try
-                {
-                    var encryptedFirstName = await _clientEncryption.EncryptAsync(
-                        firstName,
-                        new EncryptOptions(
-                            algorithm: EncryptionAlgorithm.TextPreview,
-                            keyId: _dataKeys["firstName"],
-                            queryType: "prefixPreview",
-                            textOptions: new TextOptions(
-                                caseSensitive: true,
-                                diacriticSensitive: true,
-                                new PrefixOptions(strMaxQueryLength: 10, strMinQueryLength: 2)
-                            ),
-                            contentionFactor: 0
-                        )
-                    );
-                    var prefixFilter = new BsonDocument("$expr", new BsonDocument("$encStrStartsWith",
-                        new BsonDocument
-                        {
-                            { "input", "$firstName" },
-                            { "prefix", encryptedFirstName }
-                        }));
-                    filters.Add(new BsonDocumentFilterDefinition<Patient>(prefixFilter));
-                }
-                catch (Exception)
-                {
-                    var encryptedFirstName = await _clientEncryption.EncryptAsync(
-                        firstName,
-                        new EncryptOptions(
-                            algorithm: EncryptionAlgorithm.Indexed,
-                            keyId: _dataKeys["firstName"],
-                            queryType: "equality",
-                            contentionFactor: 0
-                        )
-                    );
-                    filters.Add(filterBuilder.Eq("firstName", encryptedFirstName));
-                }
-            }
-
-            if (!string.IsNullOrWhiteSpace(lastName))
-            {
-                try
-                {
-                    var encryptedLastName = await _clientEncryption.EncryptAsync(
-                        lastName,
-                        new EncryptOptions(
-                            algorithm: EncryptionAlgorithm.TextPreview,
-                            keyId: _dataKeys["lastName"],
-                            queryType: "prefixPreview",
-                            textOptions: new TextOptions(
-                                caseSensitive: true,
-                                diacriticSensitive: true,
-                                new PrefixOptions(strMaxQueryLength: 10, strMinQueryLength: 2)
-                            ),
-                            contentionFactor: 0
-                        )
-                    );
-                    var prefixFilter = new BsonDocument("$expr", new BsonDocument("$encStrStartsWith",
-                        new BsonDocument
-                        {
-                            { "input", "$lastName" },
-                            { "prefix", encryptedLastName }
-                        }));
-                    filters.Add(new BsonDocumentFilterDefinition<Patient>(prefixFilter));
-                }
-                catch (Exception)
-                {
-                    var encryptedLastName = await _clientEncryption.EncryptAsync(
-                        lastName,
-                        new EncryptOptions(
-                            algorithm: EncryptionAlgorithm.Indexed,
-                            keyId: _dataKeys["lastName"],
-                            queryType: "equality",
-                            contentionFactor: 0
-                        )
-                    );
-                    filters.Add(filterBuilder.Eq("lastName", encryptedLastName));
                 }
             }
 
@@ -379,7 +387,7 @@ namespace MongoQEDemo.Services
                             { "input", "$nationalId" },
                             { "prefix", encryptedNationalId }
                         }));
-                    filters.Add(new BsonDocumentFilterDefinition<Patient>(prefixFilter));
+                    filters.Add(prefixFilter);
                 }
                 catch (Exception)
                 {
@@ -392,7 +400,7 @@ namespace MongoQEDemo.Services
                             contentionFactor: 0
                         )
                     );
-                    filters.Add(filterBuilder.Eq("nationalId", encryptedNationalId));
+                    filters.Add(new BsonDocument("nationalId", encryptedNationalId));
                 }
             }
 
@@ -420,7 +428,7 @@ namespace MongoQEDemo.Services
                             { "input", "$phoneNumber" },
                             { "suffix", encryptedPhoneNumber }
                         }));
-                    filters.Add(new BsonDocumentFilterDefinition<Patient>(suffixFilter));
+                    filters.Add(suffixFilter);
                 }
                 catch (Exception)
                 {
@@ -433,7 +441,7 @@ namespace MongoQEDemo.Services
                             contentionFactor: 0
                         )
                     );
-                    filters.Add(filterBuilder.Eq("phoneNumber", encryptedPhoneNumber));
+                    filters.Add(new BsonDocument("phoneNumber", encryptedPhoneNumber));
                 }
             }
 
@@ -465,7 +473,7 @@ namespace MongoQEDemo.Services
                             { "input", "$notes" },
                             { "substring", encryptedNotes }
                         }));
-                    filters.Add(new BsonDocumentFilterDefinition<Patient>(substringFilter));
+                    filters.Add(substringFilter);
                 }
                 catch (Exception)
                 {
@@ -478,14 +486,37 @@ namespace MongoQEDemo.Services
                             contentionFactor: 0
                         )
                     );
-                    filters.Add(filterBuilder.Eq("notes", encryptedNotes));
+                    filters.Add(new BsonDocument("notes", encryptedNotes));
                 }
             }
 
-            var combinedFilter = filters.Any() ? filterBuilder.And(filters) : filterBuilder.Empty;
+            if (filters.Count == 0)
+            {
+                return new BsonDocument();
+            }
+            else if (filters.Count == 1)
+            {
+                return filters[0];
+            }
+            else
+            {
+                return new BsonDocument("$and", new BsonArray(filters));
+            }
+        }
 
-            var results = await _patientsCollection.Find(combinedFilter).ToListAsync();
 
+        public async Task<List<Patient>> SearchPatientsAsync(
+            string? firstName = null,
+            string? lastName = null,
+            DateTime? dobFrom = null,
+            DateTime? dobTo = null,
+            string? zipCode = null,
+            string? nationalIdPrefix = null,
+            string? phoneNumber = null,
+            string? notesKeyword = null)
+        {
+            var bsonFilter = await BuildBsonFilterAsync(firstName, lastName, dobFrom, dobTo, zipCode, nationalIdPrefix, phoneNumber, notesKeyword);
+            var results = await _patientsCollection.Find(bsonFilter).ToListAsync();
             return results;
         }
 
@@ -502,125 +533,19 @@ namespace MongoQEDemo.Services
             _logger.LogInformation("=== EXPLAIN QUERY START ===");
             _logger.LogInformation($"Search Parameters: firstName='{firstName}', lastName='{lastName}', zipCode='{zipCode}', nationalIdPrefix='{nationalIdPrefix}', phoneNumber='{phoneNumber}', notesKeyword='{notesKeyword}', dobFrom='{dobFrom}', dobTo='{dobTo}'");
 
-            var filterBuilder = Builders<Patient>.Filter;
-            var filters = new List<FilterDefinition<Patient>>();
+            // Build BsonDocument filter directly like console-demo does
+            var bsonFilter = await BuildBsonFilterAsync(firstName, lastName, dobFrom, dobTo, zipCode, nationalIdPrefix, phoneNumber, notesKeyword);
+            _logger.LogInformation("Built encrypted BsonDocument filter using console-demo approach");
 
-            if (!string.IsNullOrWhiteSpace(zipCode))
-            {
-                filters.Add(filterBuilder.Eq(p => p.ZipCode, zipCode));
-                _logger.LogInformation($"Added ZipCode filter: {zipCode}");
-            }
-
-            if (dobFrom.HasValue && dobTo.HasValue)
-            {
-                try
-                {
-                    var rangeExpression = new BsonDocument
-                    {
-                        {
-                            "$and", new BsonArray
-                            {
-                                new BsonDocument { { "dateOfBirth", new BsonDocument { { "$gte", dobFrom.Value } } } },
-                                new BsonDocument { { "dateOfBirth", new BsonDocument { { "$lte", dobTo.Value } } } }
-                            }
-                        }
-                    };
-
-                    var encryptOptions = new EncryptOptions(
-                        algorithm: EncryptionAlgorithm.Range,
-                        keyId: _dataKeys["dateOfBirth"],
-                        rangeOptions: new RangeOptions(
-                            min: new BsonDateTime(new DateTime(1900, 1, 1)),
-                            max: new BsonDateTime(new DateTime(2100, 12, 31)),
-                            sparsity: 1,
-                            trimFactor: 4
-                        ),
-                        queryType: "range",
-                        contentionFactor: 0
-                    );
-
-                    var encryptedRangeFilter = await _clientEncryption.EncryptExpressionAsync(rangeExpression, encryptOptions);
-                    filters.Add(new BsonDocumentFilterDefinition<Patient>(encryptedRangeFilter));
-                    _logger.LogInformation($"Added encrypted DateOfBirth range filter: {dobFrom} to {dobTo}");
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogWarning($"Failed to create encrypted date range query: {ex.Message}. Skipping date filter.");
-                }
-            }
-
-            if (!string.IsNullOrWhiteSpace(firstName))
-            {
-                var prefixFilter = new BsonDocument("$expr", new BsonDocument("$encStrStartsWith",
-                    new BsonDocument
-                    {
-                        { "input", "$firstName" },
-                        { "prefix", firstName }
-                    }));
-                filters.Add(new BsonDocumentFilterDefinition<Patient>(prefixFilter));
-                _logger.LogInformation($"Added firstName prefix filter: {firstName}");
-            }
-
-            if (!string.IsNullOrWhiteSpace(lastName))
-            {
-                var prefixFilter = new BsonDocument("$expr", new BsonDocument("$encStrStartsWith",
-                    new BsonDocument
-                    {
-                        { "input", "$lastName" },
-                        { "prefix", lastName }
-                    }));
-                filters.Add(new BsonDocumentFilterDefinition<Patient>(prefixFilter));
-                _logger.LogInformation($"Added lastName prefix filter: {lastName}");
-            }
-
-            if (!string.IsNullOrWhiteSpace(nationalIdPrefix))
-            {
-                var prefixFilter = new BsonDocument("$expr", new BsonDocument("$encStrStartsWith",
-                    new BsonDocument
-                    {
-                        { "input", "$nationalId" },
-                        { "prefix", nationalIdPrefix }
-                    }));
-                filters.Add(new BsonDocumentFilterDefinition<Patient>(prefixFilter));
-                _logger.LogInformation($"Added nationalId prefix filter: {nationalIdPrefix}");
-            }
-
-            if (!string.IsNullOrWhiteSpace(phoneNumber))
-            {
-                var suffixFilter = new BsonDocument("$expr", new BsonDocument("$encStrEndsWith",
-                    new BsonDocument
-                    {
-                        { "input", "$phoneNumber" },
-                        { "suffix", phoneNumber }
-                    }));
-                filters.Add(new BsonDocumentFilterDefinition<Patient>(suffixFilter));
-                _logger.LogInformation($"Added phoneNumber suffix filter: {phoneNumber}");
-            }
-
-            if (!string.IsNullOrWhiteSpace(notesKeyword))
-            {
-                var substringFilter = new BsonDocument("$expr", new BsonDocument("$encStrContains",
-                    new BsonDocument
-                    {
-                        { "input", "$notes" },
-                        { "substring", notesKeyword }
-                    }));
-                filters.Add(new BsonDocumentFilterDefinition<Patient>(substringFilter));
-                _logger.LogInformation($"Added notes substring filter: {notesKeyword}");
-            }
-
-            var combinedFilter = filters.Any() ? filterBuilder.And(filters) : filterBuilder.Empty;
-            _logger.LogInformation($"Combined filter count: {filters.Count}");
-
-            var findCommand = new BsonDocument
-            {
-                { "find", _collectionName },
-                { "filter", combinedFilter.ToBsonDocument() }
-            };
-
+            // Use the same explain approach as console-demo
             var explainCommand = new BsonDocument
             {
-                { "explain", findCommand },
+                { "explain", new BsonDocument
+                    {
+                        { "find", _collectionName },
+                        { "filter", bsonFilter }
+                    }
+                },
                 { "verbosity", "executionStats" }
             };
 

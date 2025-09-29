@@ -26,7 +26,6 @@ document.addEventListener('DOMContentLoaded', function() {
 
         input.addEventListener('input', function(e) {
             if (e.target.type === 'text') {
-                // Auto-format as user types
                 let value = e.target.value.replace(/\D/g, '');
                 if (value.length >= 4) {
                     value = value.substring(0, 4) + '-' + value.substring(4);
@@ -64,52 +63,34 @@ document.addEventListener('DOMContentLoaded', function() {
     document.getElementById('clearSearchBtn').addEventListener('click', () => {
         document.getElementById('searchForm').reset();
         document.getElementById('resultsTableBody').innerHTML = '';
+        document.getElementById('searchResultsCount').textContent = '0';
         document.getElementById('searchResultsSection').classList.add('d-none');
     });
 
-    const searchFieldConfigs = {
-        'searchZipCode': { minLength: 5, type: 'exact', autoSearch: true, debounce: 1000 },
-        'searchYearOfBirth': { minLength: 4, type: 'range', autoSearch: true, debounce: 1000 },
-        'searchFirstName': { minLength: 3, type: 'prefix', autoSearch: true, debounce: 1000 },
-        'searchLastName': { minLength: 3, type: 'prefix', autoSearch: true, debounce: 1000 },
-        'searchNationalId': { minLength: 6, type: 'prefix', autoSearch: true, debounce: 1000 },
-        'searchPhoneNumber': { minLength: 4, type: 'suffix', autoSearch: true, debounce: 1000 },
-        'searchNotes': { minLength: 3, type: 'substring', autoSearch: true, debounce: 1000 }
-    };
+    document.getElementById('copyExplainBtn').addEventListener('click', async () => {
+        const explainContent = document.getElementById('modalRawExplain').textContent;
+        try {
+            await navigator.clipboard.writeText(explainContent);
 
-    // Enable auto-search for configured fields with performance optimizations
-    Object.keys(searchFieldConfigs).forEach(fieldId => {
-        const config = searchFieldConfigs[fieldId];
-        const element = document.getElementById(fieldId);
+            // Show success feedback
+            const btn = document.getElementById('copyExplainBtn');
+            const originalHTML = btn.innerHTML;
+            btn.innerHTML = '<i class="bi bi-check-circle"></i> Copied!';
+            btn.classList.remove('btn-primary');
+            btn.classList.add('btn-success');
 
-        if (element && config.autoSearch) {
-            element.addEventListener('input', debounce(async (e) => {
-                const value = e.target.value.trim();
-
-                // Only search if we meet the minimum length requirement
-                if (value.length >= config.minLength) {
-                    await searchPatients();
-                }
-                // Also search when field is cleared (to refresh results)
-                else if (value.length === 0) {
-                    await searchPatients();
-                }
-            }, config.debounce));
+            setTimeout(() => {
+                btn.innerHTML = originalHTML;
+                btn.classList.remove('btn-success');
+                btn.classList.add('btn-primary');
+            }, 2000);
+        } catch (err) {
+            console.error('Failed to copy: ', err);
+            alert('Failed to copy to clipboard. Please try selecting and copying manually.');
         }
     });
 });
 
-function debounce(func, wait) {
-    let timeout;
-    return function executedFunction(...args) {
-        const later = () => {
-            clearTimeout(timeout);
-            func(...args);
-        };
-        clearTimeout(timeout);
-        timeout = setTimeout(later, wait);
-    };
-}
 
 async function addPatient() {
     const patient = {
@@ -145,6 +126,7 @@ async function addPatient() {
 let currentExplainData = null;
 
 async function searchPatients() {
+    const executionStatsToggle = document.getElementById('executionStatsToggle');
     const searchRequest = {
         firstName: document.getElementById('searchFirstName').value,
         lastName: document.getElementById('searchLastName').value,
@@ -153,7 +135,7 @@ async function searchPatients() {
         nationalIdPrefix: document.getElementById('searchNationalId').value,
         phoneNumber: document.getElementById('searchPhoneNumber').value,
         notesKeyword: document.getElementById('searchNotes').value,
-        includeExplain: true // Always get explain data
+        includeExplain: executionStatsToggle ? executionStatsToggle.checked : false
     };
 
     showLoadingSpinner(true);
@@ -171,7 +153,7 @@ async function searchPatients() {
             const results = data.patients || data;
             displaySearchResults(results);
 
-            if (data.explain) {
+            if (data.explain && executionStatsToggle && executionStatsToggle.checked) {
                 currentExplainData = data.explain;
                 document.getElementById('showExplainBtn').classList.remove('d-none');
                 populateExplainModal(data.explain);
@@ -193,8 +175,12 @@ function displaySearchResults(results) {
     const tbody = document.getElementById('resultsTableBody');
     const noResults = document.getElementById('noResults');
     const searchResultsSection = document.getElementById('searchResultsSection');
+    const searchResultsCount = document.getElementById('searchResultsCount');
 
     tbody.innerHTML = '';
+
+    // Update the results count
+    searchResultsCount.textContent = results.length;
 
     // Show the search results section when there are search attempts
     searchResultsSection.classList.remove('d-none');
