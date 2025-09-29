@@ -5,7 +5,7 @@ This repository contains demonstration projects for MongoDB's Queryable Encrypti
 ## Prerequisites
 
 - .NET 9.0 SDK
-- MongoDB Atlas cluster (or MongoDB server with encryption support)
+- MongoDB Atlas cluster 8.2
 - NuGet packages:
   - MongoDB.Driver 3.5.0+
   - MongoDB.Driver.Encryption 3.5.0+
