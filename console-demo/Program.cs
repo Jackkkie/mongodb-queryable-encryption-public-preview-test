@@ -13,6 +13,7 @@ public class Program
     static readonly string CollectionName;
     static readonly string KeyVaultDatabaseName;
     static readonly string KeyVaultCollectionName;
+    static readonly string LogFileName;
 
     static Program()
     {
@@ -22,6 +23,11 @@ public class Program
         CollectionName = Environment.GetEnvironmentVariable("TEST_COLLECTION_NAME") ?? "employees";
         KeyVaultDatabaseName = Environment.GetEnvironmentVariable("KEY_VAULT_DATABASE_NAME") ?? "encryption-test";
         KeyVaultCollectionName = Environment.GetEnvironmentVariable("KEY_VAULT_COLLECTION_NAME") ?? "__keyVault";
+
+        var timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
+        LogFileName = Path.Combine("logs", $"query_explain_{timestamp}.json");
+
+        Directory.CreateDirectory("logs");
     }
 
     static async Task Main(string[] args)
@@ -350,8 +356,9 @@ public class Program
             };
 
             var prefixResults = await encryptedCollection.Find(prefixFilter).ToListAsync();
-
             Console.WriteLine($"Found {prefixResults.Count} documents with firstName starting with 'Joh'");
+
+            await ShowQueryExplain(encryptedCollection.Database, CollectionName, prefixFilter, "Prefix Query (firstName startsWith 'Joh')");
 
             // Test 2: Suffix query
             Console.WriteLine("\n--- Testing suffixPreview on lastName ---");
@@ -389,8 +396,9 @@ public class Program
             };
 
             var suffixResults = await encryptedCollection.Find(suffixFilter).ToListAsync();
-
             Console.WriteLine($"Found {suffixResults.Count} documents with lastName ending with 'son'");
+
+            await ShowQueryExplain(encryptedCollection.Database, CollectionName, suffixFilter, "Suffix Query (lastName endsWith 'son')");
 
             // Test 3: Substring query
             Console.WriteLine("\n--- Testing substringPreview on description ---");
@@ -431,6 +439,8 @@ public class Program
 
             Console.WriteLine($"Found {substringResults.Count} documents with description containing 'dev'");
 
+            await ShowQueryExplain(encryptedCollection.Database, CollectionName, substringFilter, "Substring Query (description contains 'dev')");
+
             // Test 4: Equality query
             Console.WriteLine("\n--- Testing equality query on department ---");
             Console.WriteLine("Searching for department = 'Engineering'...");
@@ -440,9 +450,12 @@ public class Program
                 new EncryptOptions(algorithm: EncryptionAlgorithm.Indexed, keyId: dataKeys["department"], queryType: "equality", contentionFactor: 0)
             );
 
-            var engineeringDocs = await encryptedCollection.Find(new BsonDocument { { "department", findPayload } }).ToListAsync();
+            var equalityFilter = new BsonDocument { { "department", findPayload } };
+            var engineeringDocs = await encryptedCollection.Find(equalityFilter).ToListAsync();
 
             Console.WriteLine($"Found {engineeringDocs.Count} employees in Engineering department");
+
+            await ShowQueryExplain(encryptedCollection.Database, CollectionName, equalityFilter, "Equality Query (department = 'Engineering')");
 
             // Test 5: Range query
             Console.WriteLine("\n--- Testing range query on salary ---");
@@ -476,6 +489,8 @@ public class Program
             var rangeResults = await encryptedCollection.Find(encryptedRangeFilter).ToListAsync();
 
             Console.WriteLine($"Found {rangeResults.Count} documents with salary $90K-$110K");
+
+            await ShowQueryExplain(encryptedCollection.Database, CollectionName, encryptedRangeFilter, "Range Query (salary $90K-$110K)");
         }
         catch (Exception ex)
         {
@@ -519,7 +534,6 @@ public class Program
         );
         var clientEncryption = new ClientEncryption(clientEncryptionOptions);
 
-        // Create or reuse data keys for each field
         var dataKeys = new Dictionary<string, Guid>();
         var fieldNames = new[] { "firstName", "lastName", "description", "department", "salary" };
         var keyVaultCollection = plainClient.GetDatabase(KeyVaultDatabaseName).GetCollection<BsonDocument>(KeyVaultCollectionName);
@@ -575,6 +589,39 @@ public class Program
 
             Console.WriteLine($"✓ Loaded existing local master key");
             return localCustomerMasterKeyBytes;
+        }
+
+    }
+
+    static async Task ShowQueryExplain(IMongoDatabase database, string collectionName, BsonDocument filter, string queryDescription)
+    {
+        try
+        {
+            var explainCommand = new BsonDocument
+            {
+                { "explain", new BsonDocument
+                    {
+                        { "find", collectionName },
+                        { "filter", filter }
+                    }
+                },
+                { "verbosity", "executionStats" }
+            };
+
+            Console.WriteLine($"Running explain for: {queryDescription}");
+            var explainResult = await database.RunCommandAsync<BsonDocument>(explainCommand);
+
+            var timestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
+            var logEntry = $"\n=== {timestamp} - {queryDescription} ===\n";
+            logEntry += explainResult.ToJson(new MongoDB.Bson.IO.JsonWriterSettings { Indent = true });
+            logEntry += "\n" + new string('=', 80) + "\n";
+
+            await File.AppendAllTextAsync(LogFileName, logEntry);
+            Console.WriteLine($"✓ Explain result saved to {LogFileName}");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"✗ Error getting explain: {ex.Message}");
         }
     }
 }
