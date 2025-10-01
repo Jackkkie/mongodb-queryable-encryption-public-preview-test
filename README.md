@@ -25,6 +25,19 @@ ASP.NET Core web application with full UI for:
 - Batch patient generation for performance testing
 - Query performance analysis
 
+<p align="left">
+  <img src="./assets/Screenshot-01.png" alt="Patient data management screen" width="100%" style="border: 1px solid #000000ff;">
+</p>
+<p align="left">
+  <img src="./assets/Screenshot-02.png" alt="Searching across encrypted fields" width="40%" style="border: 1px solid #000000ff;">
+</p>
+<p align="left">
+  <img src="./assets/Screenshot-03.png" alt="Batch generation tool" width="100%" style="border: 1px solid #000000ff;">
+</p>
+<p align="left">
+  <img src="./assets/Screenshot-04.png" alt="Performance analysis view" width="100%" style="border: 1px solid #000000ff;">
+</p>
+
 ## Environment Setup
 
 1. Copy `.env.example` to `.env` in each project directory
